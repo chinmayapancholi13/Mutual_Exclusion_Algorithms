@@ -1,0 +1,223 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_2.dtd'>
+<nta>
+	<declaration>// Place global declarations here.
+
+const int N = 3;            //total number of processes in the system
+typedef int[0,N-1] id_t;        //typedef for process type
+
+const int k = 2;    //lower bound for time spent in the critical section
+
+int request_mat[N][N];    //matrix to maintain the exchange of `REQUSEST` messages among the processes
+int request_mat1[N][N];    //copy of `request_mat` matrix -&gt; used for making decision regarding entry into critical section (could be seen from the functions below)
+
+int reply_mat[N][N];    //matrix to maintain the exchange of `REPLY` messages among the processes
+int reply_mat1[N][N];    //copy of `reply_mat` matrix -&gt; used for making decision regarding entry into critical section (could be seen from the functions below)
+
+int lamport_clock[N];    //array to maintain the Lamport clock value of the processes
+
+//function to initialize a process -&gt; invoked while going from state `initial_state` to `idle_state`
+void init_process(id_t process_id)
+{
+    lamport_clock[process_id] = 0;
+
+    for (i : int[0,N-1])
+    {
+        request_mat[process_id][i] = lamport_clock[process_id];   //not sent a request to any other process
+        reply_mat[i][process_id] = lamport_clock[process_id];   //not recvd a reply from any other process
+
+        request_mat1[process_id][i] = lamport_clock[process_id];   //not sent a request to any other process
+        reply_mat1[i][process_id] = lamport_clock[process_id];   //not recvd a reply from any other process
+    }
+    
+    return;
+}
+
+//function to initiate the requesting procedure when a function intends to enter the critical section
+void generate_request(id_t process_id)
+{    
+    lamport_clock[process_id] = lamport_clock[process_id] + 1;
+
+    for (i : int[0,N-1])
+    {
+        request_mat[process_id][i] = lamport_clock[process_id];    //send req to all the other processes with the same timestamp
+        request_mat1[process_id][i] = lamport_clock[process_id];
+    }
+
+    return;
+}
+
+//function to handle incoming `REQUEST` messages
+void check_recvd_request_msg(id_t process_id)
+{
+    for (i : int[0,N-1])
+    {
+        if((i!=process_id) &amp;&amp; (request_mat[i][process_id] &gt; 0))
+        {
+            lamport_clock[process_id] = (request_mat[i][process_id]&gt;(lamport_clock[process_id] + 1))?(request_mat[i][process_id]):(lamport_clock[process_id] + 1);    //receiving the req message
+
+            lamport_clock[process_id] = lamport_clock[process_id] + 1;    //sending the reply message
+            reply_mat[process_id][i] = lamport_clock[process_id];
+            reply_mat1[process_id][i] = lamport_clock[process_id];
+
+            request_mat[i][process_id] = 0;    //"consume" the message
+        }
+    }    
+    
+    return; 
+}
+
+//function to handle incoming `REPLY` messages
+void check_recvd_reply_msg(id_t process_id)
+{
+    for (i : int[0,N-1])
+    {
+        if((i!=process_id) &amp;&amp; (reply_mat[i][process_id] &gt; 0))
+        {
+            lamport_clock[process_id] = (reply_mat[i][process_id]&gt;(lamport_clock[process_id] + 1))?(reply_mat[i][process_id]):(lamport_clock[process_id] + 1);    //receiving the request message
+
+            reply_mat[i][process_id] = 0;    //"consume" the message
+        }
+    }    
+    
+    return; 
+}
+
+//function to check if a process should enter the critical section
+int check_if_ready_for_cs(id_t process_id)
+{
+    int message_ts = request_mat1[process_id][process_id];    //original timestamp of the requesting message
+
+    bool should_enter_cs = true;
+
+    //checking if message_ts is at the top of the queue of the i_th process
+    for (i : int[0,N-1])
+    {
+        if(!should_enter_cs) 
+        {
+            return 0;
+        }
+        
+        if((i!=process_id) &amp;&amp; !((request_mat[i][process_id]==0) &amp;&amp; (message_ts &lt; request_mat1[i][process_id])) &amp;&amp; !((request_mat[i][process_id]==0) &amp;&amp; (message_ts == request_mat1[i][process_id] &amp;&amp; process_id&lt;i)))
+        {
+             should_enter_cs = false;
+        }
+    }
+
+    if(!should_enter_cs) 
+    {
+        return 0;
+    }
+
+    //checking that the process should have received a message with higher timestamp from every other process
+    for (i : int[0,N-1])
+    {
+        if((i!=process_id) &amp;&amp; !((request_mat[i][process_id]==0 &amp;&amp; (request_mat1[i][process_id] &gt; message_ts)) || (reply_mat[i][process_id]==0 &amp;&amp; (reply_mat1[i][process_id] &gt; message_ts))))
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+//function to release the critical section -&gt; invoked by a process going from the state `critical_section` to `idle_state`
+void release_cs(id_t process_id)
+{
+
+    return;
+}
+</declaration>
+	<template>
+		<name x="5" y="5">Lamport</name>
+		<parameter>const id_t pid</parameter>
+		<declaration>// Place local declarations here.
+
+clock x;</declaration>
+		<location id="id0" x="-212" y="-161">
+			<name x="-246" y="-153">idle_state</name>
+		</location>
+		<location id="id1" x="-17" y="127">
+			<name x="-27" y="93">critical_section</name>
+		</location>
+		<location id="id2" x="272" y="-153">
+			<name x="229" y="-144">waiting_for_cs</name>
+		</location>
+		<location id="id3" x="-467" y="-161">
+			<name x="-501" y="-144">initial_state</name>
+		</location>
+		<init ref="id3"/>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="guard" x="263" y="-85">check_if_ready_for_cs(pid)==0</label>
+			<label kind="assignment" x="272" y="-59">check_recvd_reply_msg(pid)</label>
+			<nail x="365" y="-34"/>
+			<nail x="433" y="-119"/>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id2"/>
+			<label kind="assignment" x="-68" y="-153">generate_request(pid)</label>
+		</transition>
+		<transition>
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-153" y="-59">x &gt; k</label>
+			<label kind="assignment" x="-170" y="-25">release_cs(pid)</label>
+			<nail x="-76" y="42"/>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="-323" y="-263">check_recvd_request_msg(pid)</label>
+			<nail x="-272" y="-237"/>
+			<nail x="-161" y="-237"/>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id0"/>
+			<label kind="assignment" x="-382" y="-178">init_process(pid)</label>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="guard" x="178" y="-255">check_if_ready_for_cs(pid)==0</label>
+			<label kind="assignment" x="178" y="-280">check_recvd_request_msg(pid)</label>
+			<nail x="211" y="-259"/>
+			<nail x="373" y="-259"/>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id1"/>
+			<label kind="guard" x="34" y="-17">check_if_ready_for_cs(pid)==1</label>
+			<label kind="assignment" x="76" y="8">x = 0</label>
+		</transition>
+	</template>
+	<system>// Place template instantiations here.
+//Process = Lamport();
+// List one or more processes to be composed into a system.
+
+system Lamport;
+    </system>
+	<queries>
+		<query>
+			<formula>A[] forall (i:id_t) forall (j:id_t) Lamport(i).critical_section &amp;&amp; Lamport(j).critical_section imply i == j
+			</formula>
+			<comment>
+			</comment>
+		</query>
+		<query>
+			<formula>A[] not deadlock
+			</formula>
+			<comment>
+			</comment>
+		</query>
+		<query>
+			<formula>Lamport(0).waiting_for_cs --&gt; Lamport(0).critical_section
+			</formula>
+			<comment>
+			</comment>
+		</query>
+	</queries>
+</nta>
